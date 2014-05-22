@@ -1,13 +1,10 @@
 # coding=utf-8
 
-import re, urllib2, urlparse, hashlib, datetime, botmodules.tools as tools
-import traceback
+import re
+import hashlib
+import datetime
+import sqlite3
 
-try: import MySQLdb
-except ImportError: pass
-
-try: import botmodules.wiki
-except ImportError: pass
 
 def url_parser(self, e):
     url = re.search(r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>])*\))+(?:\(([^\s()<>])*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))", e.input)
@@ -15,185 +12,145 @@ def url_parser(self, e):
     if url:
         url = url.group(0)
         if url[0:4].lower() != "http":
-           url = "http://" + url
+            url = "http://" + url
         e.input = url
         return url_posted(self, e)
     else:
         return None
 url_parser.lineparser = True
 
+
 def url_posted(self, e):
-  url = e.input
+    url = e.input
     #checks if the URL is a dupe (if mysql is enabled)
     #detects if a wikipedia or imdb url is posted and does the appropriate command for it
 
-  try:
-
-    repost=""
+    repost = ""
     days = ""
-    
-    if tools.config.sqlmode > 0:
-        urlhash = hashlib.sha224(url).hexdigest()
 
-        conn = MySQLdb.connect (host = "localhost",
-                                  user = tools.config.sqlusername,
-                                  passwd = tools.config.sqlpassword,
-                                  db = "irc_links")   
-        cursor = conn.cursor()
-        query = "SELECT reposted, timestamp FROM links WHERE hash='%s'" % urlhash
-        result = cursor.execute(query)
-        
-        if result !=0:
-            result = cursor.fetchone()
-            
-            repost="LOL REPOST %s " % (result[0] + 1)
-        
-            orig = result[1]
-            now = datetime.datetime.now()
-            delta = now - orig
-                     
-            plural = ""
-            if delta.days > 0:
-              if delta.days > 1:
+    urlhash = hashlib.sha224(url.encode()).hexdigest()
+    conn = sqlite3.connect("links.sqlite")
+    cursor = conn.cursor()
+    result = cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='links';").fetchone()
+    if not result:
+        cursor.execute('''CREATE TABLE 'links' ("url" tinytext, "hash" char(56) NOT NULL UNIQUE, "reposted" smallint(5) default '0', "timestamp" timestamp NOT NULL default CURRENT_TIMESTAMP);''')
+        cursor.execute('''CREATE INDEX "links_hash" ON 'links' ("hash");''')
+
+    query = "SELECT reposted, timestamp FROM links WHERE hash='%s'" % urlhash
+    result = cursor.execute(query)
+    result = cursor.fetchone()
+    if result:
+        repost = "LOL REPOST %s " % (result[0] + 1)
+
+        orig = datetime.datetime.strptime(result[1], "%Y-%m-%d %H:%M:%S")
+        now = datetime.datetime.utcnow()
+        delta = now - orig
+
+        plural = ""
+        if delta.days > 0:
+            if delta.days > 1:
                 plural = "s"
-              days = " (posted %s day%s ago)" % (str(delta.days), plural)
-            else:
-              hrs = int(round(delta.seconds/3600.0,0))
-              if hrs == 0:
-                mins = delta.seconds/60
+            days = " (posted %s day%s ago)" % (str(delta.days), plural)
+        else:
+            hrs = int(round(delta.seconds / 3600.0, 0))
+            if hrs == 0:
+                mins = round(delta.seconds / 60)
                 if mins > 1:
-                  plural = "s"
+                    plural = "s"
                 days = " (posted %s minute%s ago)" % (str(mins), plural)
                 if mins == 0:
-                    repost=""
-                    days=""
-              else:
+                    repost = ""
+                    days = ""
+            else:
                 if hrs > 1:
-                  plural = "s"
+                    plural = "s"
                 days = " (posted %s hour%s ago)" % (str(hrs), plural)
-            
-    title = "" 
-    
-    try: wiki = self.bangcommands["!wiki"](self, e, True)
-    except: pass
-    try: imdb = self.bangcommands["!imdb"](self, e, True)
-    except: pass
-    if wiki and wiki.output:
+
+    title = ""
+
+    try:
+        wiki = self.bangcommands["!wiki"](self, e, True)
         title = wiki.output
-    elif imdb and imdb.output:
+    except:
+        pass
+    try:
+        imdb = self.bangcommands["!imdb"](self, e, True)
         title = imdb.output
-    else:
-        if url.find("imgur.com") != -1 and url.find("/a/") == -1:
-          imgurid =  url[url.rfind('/')+1:url.rfind('/')+6]
-          url = "http://imgur.com/" + imgurid
-        title = get_title(self, url)
+    except:
+        pass
+    try:
+        yt = self.bangcommands["!yt"](self, e, True)
+        if yt:
+            title = yt.output
+    except:
+        pass
+    try:
+        trope = self.bangcommands["!trope"](self, e, True)
+        if trope:
+            title = trope.output
+    except:
+        pass
+    if url.find("imgur.com") != -1 and url.find("/a/") == -1:
+        imgurid = url[url.rfind('/') + 1:]
+        if "." in imgurid:
+            imgurid = imgurid[:imgurid.rfind('.')]
+        url = "http://imgur.com/" + imgurid
+
+    # Ignore strava ride links because Dan said so, fuck modularity, embace tight coupling.
+    if url.find("app.strava.com/activities") != -1 or url.find("www.strava.com/activities") != -1:
+        return None
+    if not title:
+        title = get_title(self, e, url)
+
+    if title:
         if title.find("imgur: the simple") != -1:
-          title = ""
+            title = ""
+        title = title.replace("\n", " ")
+        title = re.sub('\s+', ' ', title)
+        title = re.sub('(?i)whatsisname', '', title)
 
-    title = title.replace("\n", " ")
-    title = re.sub('\s+', ' ', title)
-    pattern = re.compile('whatsisname', re.IGNORECASE)
-    title = pattern.sub('', title)      
-    title = tools.decode_htmlentities(title.decode("utf-8", 'ignore')).encode("utf-8", 'ignore')
+        cursor.execute("""UPDATE OR IGNORE links SET reposted=reposted+1 WHERE hash = ?""", [urlhash])
+        cursor.execute("""INSERT OR IGNORE INTO links(url, hash) VALUES (?,?)""", (url, urlhash))
+        conn.commit()
 
-    titler = "%s%s%s" % (repost, title, days)
-    
-    if tools.config.sqlmode == 2:
-        title = MySQLdb.escape_string(title)
-        url = MySQLdb.escape_string(url)
-        query = "INSERT INTO links (url, title, hash) VALUES ('%s','%s','%s') ON DUPLICATE KEY UPDATE reposted=reposted+1,title='%s'" % (url, title, urlhash, title)       
-        cursor.execute(query)
-    if tools.config.sqlmode > 0:
-        conn.close()
-        
-    e.output = titler
+        e.output = "%s%s%s" % (repost, title, days)
+
+    conn.close()
+
     return e
 
-  
-  except Exception as inst: 
-    print url + ": " + str(inst)
-    pass
-  return
 
-def get_title(self, url):
-    #extracts the title tag from a page
+def get_title(self, e, url):
+    length = 51200
+    if url.find("amazon.") != -1:
+        length = 100096  # because amazon is coded like shit
+    page = self.tools["load_html_from_URL"](url, length)
     title = ""
-    try:
-        url = fixurl(url)
-        
-        opener = urllib2.build_opener()
-        readlength = 10240
-        if url.find("amazon.") != -1: 
-            readlength = 100096 #because amazon is coded like shit
-            
-        opener.addheaders = [('User-Agent',"Opera/9.10 (YourMom 8.0)"),    
-                             ('Range',"bytes=0-" + str(readlength))]
 
-        pagetmp = opener.open(url)
-        if pagetmp.headers['content-type'].find("text") != -1:
-            page = pagetmp.read(readlength)
-            opener.close()
-            if page.find('meta name="generator" content="MediaWiki') != -1:
-                title = botmodules.wiki.read_wiki_page(url)
-            else:
-                titletmp = tools.remove_html_tags(re.search('(?is)\<title\>.*?<\/title\>',page).group(0))
-                title = "Title: " + titletmp.strip()[0:180]
-    except Exception as err:
-        print traceback.print_exc()
-        print "urlerr: " + url + " " + str(err)
-        pass
-        
+    if page and page.find('meta', attrs={'name': "generator", 'content': re.compile("MediaWiki", re.I)}):
+        try:
+            wiki = self.bangcommands["!wiki"](self, e, True, True)
+            title = wiki.output
+        except:
+            pass
+    elif page:
+        title = "Title: " + page.find('title').string
+
     return title
-
-def fixurl(url):
-    # turn string into unicode
-    if not isinstance(url,unicode):
-        url = url.decode('utf8')
-
-    # parse it
-    parsed = urlparse.urlsplit(url)
-
-    # divide the netloc further
-    hostport = parsed.netloc
-    host,colon2,port = hostport.partition(':')
-
-    # encode each component
-    scheme = parsed.scheme.encode('utf8')
-    host = host.encode('idna')
-
-    colon2 = colon2.encode('utf8')
-    port = port.encode('utf8')
-    path = '/'.join(  # could be encoded slashes!
-        urllib2.quote(urllib2.unquote(pce).encode('utf8'),'')
-        for pce in parsed.path.split('/')
-    )
-    query = urllib2.quote(urllib2.unquote(parsed.query).encode('utf8'),'=&?/')
-    fragment = urllib2.quote(urllib2.unquote(parsed.fragment).encode('utf8'))
-
-    # put it back together
-    netloc = ''.join((host,colon2,port))
-    return urlparse.urlunsplit((scheme,netloc,path,query,fragment))
-
 
 
 def last_link(self, e):
     #displays last link posted (requires mysql)
-    if tools.config.sqlmode > 0:
-      conn = MySQLdb.connect (host = "localhost",
-                                user = tools.config.sqlusername,
-                                passwd = tools.config.sqlpassword,
-                                db = "irc_links")
-                                
-      cursor = conn.cursor()
-      if (cursor.execute("SELECT url FROM links ORDER BY id DESC LIMIT 1")):
+    conn = sqlite3.connect("links.sqlite")
+    cursor = conn.cursor()
+    if cursor.execute("SELECT url FROM links ORDER BY rowid DESC LIMIT 1"):
         result = cursor.fetchone()
         url = result[0]
 
-      conn.close()
-      e.output = "[ " + url + " ] " + get_title(self, url)
-      return e
-    else:
-      return None
-last_link.command = "!lastlink"
-last_link.helptext = "Usage: !lastlink\nShows the last URL that was posted in the channel"
+    conn.close()
+    e.output = "[ " + url + " ] " + get_title(self, e, url)
+    return e
 
+last_link.command = "!lastlink"
+last_link.helptext = "Usage: \002!lastlink\002" \
+                     "Shows the last URL that was posted in the channel"

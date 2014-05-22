@@ -5,71 +5,93 @@
 #  python genmaybot.py irc.0id.net "#chan" Nickname
 #
 
-### look in to !seen functionality 
+### look in to !seen functionality
 # |- on_join, on_part, on_kick, on_nick, on_quit
 # |---use on_whoreply to confirm the users are who their nick is?
 # |---check who is in the channel when the bot joins?
-# | db: users_table: user UNQ | hostmask | last action | <user_aliases> | <user_knownhostmasks>
-# | db: user_aliases: user UNQ | alternick
-# | db: user_knownhostmasks: user UNQ | hostmask
-# (hostmask might be username | hostmask where username@hostmask 
-# 
+# | db: users_table: user UNQ | cur-nick | cur-inchannel BOOL | last action | last-timestamp | <user_aliases> | <user_knownhostmasks>
+# | db: user_aliases: user | alternick (allow wildcards in alternick)
+# | db: user_knownhostmasks: user | hostmask
+# (hostmask might be username | hostmask where username@hostmask
+#
 ### random descision maker?
-# test comment please ignore 
+# test comment please ignore
 
 
 from ircbot import SingleServerIRCBot
 import time, imp
-import sys, os, socket, ConfigParser, threading, traceback
+import sys, os, socket, configparser, threading, traceback
 
 socket.setdefaulttimeout(5)
 
+
 class TestBot(SingleServerIRCBot):
-    
 
     def __init__(self, channel, nickname, server, port=6667):
-        SingleServerIRCBot.__init__(self, [(server, port)], nickname, nickname, 30)
+        SingleServerIRCBot.__init__(self, [(server, port)], nickname, nickname, 15)
         self.channel = channel
         self.doingcommand = False
+        self.botnick = nickname
 
-        self.commandaccesslist = {}    
+        self.commandaccesslist = {}
         self.commandcooldownlast = {}
 
-        self.spam ={}
-        
-        config = ConfigParser.ConfigParser()
-        try: 
+        self.spam = {}
+
+        self.load_config()
+        print(self.loadmodules())
+
+    def load_config(self):
+        config = configparser.ConfigParser()
+        try:
             cfgfile = open('genmaybot.cfg')
         except IOError:
-            print "You need to create a .cfg file using the example"
+            print("You need to create a .cfg file using the example")
             sys.exit(1)
-            
-        config.readfp(cfgfile)
-        self.identpassword = config.get("irc","identpassword")
-        self.botadmins = config.get("irc","botadmins").split(",")
 
-        print self.loadmodules()
-        
+        config.readfp(cfgfile)
+        self.botconfig = config
+        self.botadmins = config["irc"]["botadmins"].split(",")
+        self.error_log = simpleLogger(config['misc']['error_log'])
+        self.event_log = simpleLogger(config['misc']['event_log'])
+
+        sys.stdout = self.event_log
+        sys.stderr = self.error_log
+
     def on_nicknameinuse(self, c, e):
         c.nick(c.get_nickname() + "_")
 
     def on_kick(self, c, e):
         #attempt to rejoin any channel we're kicked from
         if e.arguments()[0][0:6] == c.get_nickname():
-            c.join(e.target()) 
+            c.join(e.target())
 
     def on_disconnect(self, c, e):
-        print "DISCONNECT: " + str(e.arguments())
-
-    def on_welcome(self, c, e):
-        c.privmsg("NickServ", "identify " + self.identpassword)
-        c.join(self.channel)       
-        self.alerts(c)  
-        self.irccontext = c
-            
-    #def on_invite(self, c, e):
-        #c.join(e.arguments()[0])
+        print("DISCONNECT: " + str(e.arguments()))
         
+        
+    def on_welcome(self, c, e):
+        c.privmsg("NickServ", "identify " + self.botconfig['irc']['identpassword'])
+        c.oper(self.botconfig['irc']['opernick'], self.botconfig['irc']['operpassword'])
+        c.join(self.channel)
+        self.alerts(c)
+        self.irccontext = c
+        c.who(c.get_nickname())
+        
+       
+    
+    def on_youreoper(self, c, e):
+        print ("I'm an IRCop bitches!")
+        
+    
+    def on_whoishostline(self, c, e):
+         try:
+            
+            self.whoisIP_reply_handler(self, self.whoisIP_sourceEvent, e.arguments()[1].split()[-1],"",True)
+         except:
+            pass #No whois host line reply handler
+
+
     def on_pubmsg(self, c, e):
         self.process_line(c, e)
 
@@ -77,15 +99,25 @@ class TestBot(SingleServerIRCBot):
         from_nick = e.source().split("!")[0]
         line = e.arguments()[0].strip()
         command = line.split(" ")[0]
-        
+
         if command in self.admincommands and self.isbotadmin(from_nick):
             self.admincommand = line
-            c.who(from_nick) 
-                
+            c.who(from_nick)
+
         self.process_line(c, e, True)
-    
-    def on_whoreply(self, c,e):
+
+    def on_whoreply(self, c, e):
         nick = e.arguments()[4]
+        
+        # The bot does a whois on itself to find its cloaked hostname after it connects
+        # This if statement handles that situation and stores the data accordingly        
+        if nick == c.get_nickname():
+            self.realname = e.arguments()[1]
+            self.hostname = e.arguments()[2]
+            #The protocol garbage before the real message is 
+            #:<nick>!<realname>@<hostname> PRIVMSG <target> :
+            return
+        
         line = self.admincommand
         command = line.split(" ")[0]
         self.admincommand = ""
@@ -97,13 +129,14 @@ class TestBot(SingleServerIRCBot):
                     c.privmsg(nick, line)
 
         except Exception as inst:
-            print "admin exception: " + line + " : " + str(inst)
+            traceback.print_exc()
+            print("admin exception: " + line + " : " + str(inst))
 
     def process_line(self, c, ircevent, private = False):
         if self.doingcommand:
             return
         self.doingcommand = True
-        
+
         line = ircevent.arguments()[0]
         from_nick = ircevent.source().split("!")[0]
         hostmask = ircevent.source()[ircevent.source().find("!")+1:]
@@ -113,92 +146,101 @@ class TestBot(SingleServerIRCBot):
             linesource = from_nick
         else:
             linesource = ircevent.target()
-        
+
         e = None
         etmp = []
-                
+
+
         try:
             #commands names are defined by the module as function.command = "!commandname"
             if command in self.bangcommands and (self.commandaccess(command) or from_nick in self.botadmins):
                 e = self.botEvent(linesource, from_nick, hostmask, args)
+                e.botnick = c.get_nickname() #store the bot's nick in the event in case we need it.
+
                 if linesource in self.channels and hasattr(self.bangcommands[command], 'privateonly'):
                     self.doingcommand = False
                     return
                 etmp.append(self.bangcommands[command](self, e))
-          
-            else:
-                #lineparsers take the whole line and nick for EVERY line
+
+            #lineparsers take the whole line and nick for EVERY line
+            #ensure the lineparser function is short and simple. Try to not to add too many of them
+            #Multiple lineparsers can output data, leading to multiple 'say' lines
+            for command in self.lineparsers:
                 e = self.botEvent(linesource, from_nick, hostmask, line)
-                #ensure the lineparser function is short and simple. Try to not to add too many of them
-                #Multiple lineparsers can output data, leading to multiple 'say' lines
-                for command in self.lineparsers:
-                    if linesource in self.channels and hasattr(command, 'privateonly'): continue
-                    etmp.append(command(self, e))
-          
+                e.botnick = c.get_nickname()  # store the bot's nick in the event in case we need it.
+                if linesource in self.channels and hasattr(command, 'privateonly'):
+                    continue
+                etmp.append(command(self, e))
+
             firstpass = True
-            for e in etmp:      
+            for e in etmp:
                 if e and e.output:
                     if firstpass and not e.source == e.nick and not e.nick in self.botadmins:
                         if self.isspam(e.hostmask, e.nick): break
                         firstpass = False
                     self.botSay(e)
-                                            
-        except Exception as inst: 
+
+        except Exception as inst:
             traceback.print_exc()
-            print line + " : " + str(inst)
+            print(line + " : " + str(inst))
             pass
 
         self.doingcommand = False
         return
-    
+
     def botSay(self, botevent):
         try:
             if botevent.output:
                 for line in botevent.output.split("\n"):
-                    line = line.replace("join", "join")
-                    line = line.replace("come", "come") 
                     if botevent.notice:
                         self.irccontext.notice(botevent.source, line)
-                    else:              
+                    else:
                         self.irccontext.privmsg(botevent.source, line)
         except Exception as inst:
-            print "bot failed trying to say " + str(botevent.output) + "\n" + str(inst) 
+            print("bot failed trying to say " + str(botevent.output) + "\n" + str(inst))
             traceback.print_exc()
 
     def loadmodules(self):
+        self.tools = vars(imp.load_source("tools", "./botmodules/tools.py"))
+
         filenames = []
         for fn in os.listdir('./botmodules'):
             if fn.endswith('.py') and not fn.startswith('_'):
                 filenames.append(os.path.join('./botmodules', fn))
-               
+
         self.bangcommands = {}
         self.admincommands = {}
         self.botalerts = []
         self.lineparsers = []
-               
+
         for filename in filenames:
             name = os.path.basename(filename)[:-3]
             try:
                 module = imp.load_source(name, filename)
-            except Exception as inst: 
-                print "Error loading module " + name + " : " + str(inst)
+            except Exception as inst:
+                print("Error loading module " + name + " : " + str(inst))
             else:
-                for name, func in vars(module).iteritems():
+                try:
+                    vars(module)['__init__'](self)
+                except:
+                    pass
+                for name, func in vars(module).items():
                     if hasattr(func, 'command'):
                         command = str(func.command)
                         self.bangcommands[command] = func
                     elif hasattr(func, 'admincommand'):
                         command = str(func.admincommand)
-                        self.admincommands[command] = func                      
+                        self.admincommands[command] = func
                     elif hasattr(func, 'alert'):
                         self.botalerts.append(func)
                     elif hasattr(func, 'lineparser'):
-                        self.lineparsers.append(func) 
-        
-        commands, botalerts, lineparsers, admincommands = "","","",""
-                        
+                        if func.lineparser:
+                            self.lineparsers.append(func)
+
+        commands, botalerts, lineparsers, admincommands = "", "", "", ""
+
         if self.bangcommands:
-            commands = 'Loaded command modules: %s' % self.bangcommands.keys()
+            commands = 'Loaded command modules: %s' % list(self.bangcommands.keys())
         else:
             commands = "No command modules loaded!"
         if self.botalerts:
@@ -206,12 +248,12 @@ class TestBot(SingleServerIRCBot):
         if self.lineparsers:
             lineparsers = 'Loaded line parsers: %s' % ', '.join((command.__name__ for command in self.lineparsers))
         if self.admincommands:
-            admincommands = 'Loaded admin commands: %s' % self.admincommands.keys()
-        return commands + "\n" + botalerts + "\n" + lineparsers + "\n" + admincommands   
-    
+            admincommands = 'Loaded admin commands: %s' % list(self.admincommands.keys())
+        return commands + "\n" + botalerts + "\n" + lineparsers + "\n" + admincommands
+
     def isbotadmin(self, nick):
         return nick in self.botadmins
-   
+
     def commandaccess(self, command):
         if "all" in self.commandaccesslist:
             command = "all"
@@ -226,124 +268,132 @@ class TestBot(SingleServerIRCBot):
                 return False
         else: #if there's no entry it's assumed to be enabled
             return True
-                
-    def isspam(self, user, nick):
 
-        if not (self.spam.has_key(user)):
+    def isspam(self, user, nick):
+        
+        #Clean up ever-growing spam dictionary
+        cleanupkeys = []
+        for key in self.spam:
+            if (time.time() - self.spam[key]['last']) > (24*3600): #anything older than 24 hours
+                cleanupkeys.append(key)
+        for key in cleanupkeys:
+            self.spam.pop(key)
+        #end clean up job         
+            
+
+        if not (user in self.spam):
             self.spam[user] = {}
             self.spam[user]['count'] = 0
             self.spam[user]['last'] = 0
             self.spam[user]['first'] = 0
             self.spam[user]['limit'] = 15
-      
-        self.spam[user]['count'] +=1
+
+        self.spam[user]['count'] += 1
         self.spam[user]['last'] = time.time()
-      
+
         if self.spam[user]['count'] == 1:
             self.spam[user]['first'] = time.time()
-      
+            return False
+
         if self.spam[user]['count'] > 1:
             self.spam[user]['limit'] = (self.spam[user]['count'] - 1) * 15
 
             if not ((self.spam[user]['last'] - self.spam[user]['first']) > self.spam[user]['limit']):
                 bantime = self.spam[user]['limit'] + 15
-                print "%s : %s band %s seconds" % (time.strftime("%d %b %Y %H:%M:%S", time.localtime()), nick, bantime)
+                print("%s : %s band %s seconds" % (time.strftime("%d %b %Y %H:%M:%S", time.localtime()), nick, bantime))
                 return True
             else:
                 self.spam[user]['first'] = 0
                 self.spam[user]['count'] = 0
                 self.spam[user]['limit'] = 15
                 return False
-  
+
     def alerts(self, context):
-        try: 
+        try:
             for command in self.botalerts:
-                say = command()
-                if say:
-                    for channel in self.channels:  
-                        context.privmsg(channel, say)
-        except Exception as inst: 
-            print "alerts: " + str(inst)
+                if command.alert: #check if alert is actually enabled
+                    say = command()
+                    if say:
+                        for channel in self.channels:
+                            if channel != '#bopgun' and channel != '#fsw':
+                                context.privmsg(channel, say)
+        except Exception as inst:
+            print("alerts: " + str(inst))
             pass
-      
-        t=threading.Timer(60,self.alerts, [context])
-        t.start()
-      
+
+        self.t = threading.Timer(60, self.alerts, [context])
+        self.t.start()
+
     class botEvent:
-        def __init__(self, source, nick, hostmask, input, output="", notice = False):
-            self._source = source
-            self._nick = nick
-            self._input = input
-            self._output = output
-            self._notice = notice
-            self._hostmask = hostmask
-            
-        @property
-        def source(self):
-            return self._source
-        @source.setter
-        def source(self, value):
-            self._source = value
-        
-        @property
-        def nick(self):
-            return self._nick
-        @nick.setter
-        def nick(self, value):
-            self._nick = value
-        
-        @property
-        def hostmask(self):
-            return self._hostmask
-        @hostmask.setter
-        def hostmask(self, value):
-            self._hostmask = value
-        
-        @property
-        def input(self):
-            return self._input
-        @input.setter
-        def input(self, value):
-            self._input = value
-        
-        @property
-        def output(self):
-            return self._output
-        @output.setter
-        def output(self, value):
-            self._output = value
-            
-        @property
-        def notice(self):
-            return self._notice
-        @notice.setter
-        def notice(self, value):
-            self._notice = value
-  
-  
+        def __init__(self, source, nick, hostmask, inpt, output="", notice=False):
+            self.source = source
+            self.nick = nick
+            self.input = inpt
+            self.output = output
+            self.notice = notice
+            self.hostmask = hostmask
+
+
 def main():
     #print sys.argv
-    if len(sys.argv) != 4:
-        print "Usage: testbot <server[:port]> <channel> <nickname>"
-        sys.exit(1)
 
-    s = sys.argv[1].split(":", 1)
-    server = s[0]
-    if len(s) == 2:
+    if len(sys.argv) != 4:
+
+        config = configparser.ConfigParser()
         try:
-            port = int(s[1])
-        except ValueError:
-            print "Error: Erroneous port."
+            cfgfile = open('genmaybot.cfg')
+        except IOError:
+            print("You need to create a .cfg file using the example")
             sys.exit(1)
+
+        config.readfp(cfgfile)
+        if config['irc']['nick'] and config['irc']['server'] and config['irc']['channels']:
+            nickname = config['irc']['nick']
+            server, port = config['irc']['server'].split(":", 1)
+            try:
+                port = int(port)
+            except:
+                port = 6667
+            channel = config['irc']['channels']
+        else:
+            print("Usage: bot.py <server[:port]> <channel> <nickname> \nAlternatively configure the server in the .cfg")
+            sys.exit(1)
+
     else:
-        port = 6667
-    channel = sys.argv[2]
-    nickname = sys.argv[3]
+        s = sys.argv[1].split(":", 1)
+        server = s[0]
+        if len(s) == 2:
+            try:
+                port = int(s[1])
+            except ValueError:
+                print("Error: Erroneous port.")
+                sys.exit(1)
+        else:
+            port = 6667
+        channel = sys.argv[2]
+        nickname = sys.argv[3]
 
     bot = TestBot(channel, nickname, server, port)
     bot.start()
 
+#this bullshit is necessary because sys.stdout doesn't write the file continuously
+class simpleLogger():
+
+    def __init__(self,logfile):
+        self.logfile = logfile
+        open(logfile,"w").write("") ##clear out any previous contents
+
+    def write(self,logtext):
+        logfile = open(self.logfile,"a")
+        logfile.write(logtext)
+        logfile.close()
+        return 0
+
+    def flush(self):
+        return 0
+
+
 if __name__ == "__main__":
     main()
-    
+
 

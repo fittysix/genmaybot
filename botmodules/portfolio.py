@@ -1,4 +1,4 @@
-import sqlite3, locale, urllib2
+import sqlite3, locale, urllib.request, urllib.error, urllib.parse
 try:
     locale.setlocale(locale.LC_ALL, 'English_United States')
 except:
@@ -52,15 +52,15 @@ def add_stock(nick,stock,numshares,pricepaid):
 	c = conn.cursor()
 	result = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='portfolios';").fetchone()
 	if not result:
-		c.execute('''create table portfolios(user text, stock text, numshares integer, pricepaid real)''')
+		c.execute('''create table portfolios(user text, stock text, numshares real, pricepaid real)''')
 
 	if get_stocks_prices(stock)[0] == "0.00":
 		return "Incorrect ticker symbol. Fix it and try again."
 	
 	try:
-		numshares = int(numshares)
+		numshares = float(numshares)
 		pricepaid = float(pricepaid)
-		if numshares <= 0 or pricepaid <=0 or numshares != numshares or pricepaid != pricepaid:
+		if numshares <= 0 or pricepaid < 0 or numshares != numshares or pricepaid != pricepaid:
 			raise BaseException
 	except:
 		return "The number of shares or the price is incorrect. Fix it and try again."
@@ -121,7 +121,10 @@ def list_stock(nick,public):
 			init_value+=(stock[2]*stock[3])
 			cur_value+=(stock[2]*float(stock_prices[id_counter]))
 			stock_gain=float(stock_prices[id_counter])-stock[3]
-			stock_perc_gain= round(float(stock_gain)/stock[3],4)*100
+			if (stock[3] > 0):
+				stock_perc_gain= round(float(stock_gain)/stock[3],4)*100
+			else:
+				stock_perc_gain= float('nan')
 			
 			stockgainpct = "%0.2f (%0.2f%%)" % (stock_gain, stock_perc_gain)
 						
@@ -147,7 +150,7 @@ def list_stock(nick,public):
 def get_stocks_prices(stocks):## pass in a list or tuple or a single string
 						## of stocks and get back their prices in a tuple
 						
-	opener = urllib2.build_opener()
+	opener = urllib.request.build_opener()
 	opener.addheaders = [('User-Agent',"Opera/9.10 (YourMom 8.0)")]
 
 	#if you pass in a string we dont want to insert + signs
@@ -155,11 +158,11 @@ def get_stocks_prices(stocks):## pass in a list or tuple or a single string
 		stocks = "+".join(stocks)
 	
 	pagetmp = opener.open("http://download.finance.yahoo.com/d/quotes.csv?s=%s&f=l1" % stocks)
-	quote = pagetmp.read(1024)
+	quote = pagetmp.read(1024).decode("utf-8")
 
 	return quote.split("\r\n")
       
 	
 
 portfolio.command = "!portfolio"
-portfolio.helptext = "!portfolio help text"
+portfolio.helptext = "!portfolio ADD <symbol> <# of shares> <price> - to add stocks to your portfolio \n!portfolio LIST - will list all your stocks and gains\n!portfolio - show only the gains and values\n!portfolio DEL <id> - use the ID number given in !portfolio list"

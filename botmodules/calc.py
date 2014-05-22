@@ -1,4 +1,4 @@
-import urllib2, urllib, json, re
+import urllib.request, urllib.error, urllib.parse, urllib, json, re, traceback
 
 def google_convert(self, e):
     #google calculator
@@ -7,11 +7,12 @@ def google_convert(self, e):
     
     if nick in google_convert.lastresult:
         term = term.replace("ANS", google_convert.lastresult[nick])
-    url = "http://www.google.com/ig/calculator?q=%s" % urllib.quote(term)
+    url = "http://www.google.com/ig/calculator?q=%s" % urllib.parse.quote(term)
     result = ""
     try:
-        response = urllib2.urlopen(url).read() 
-        response = response.replace("\xa0",",").decode('unicode-escape')
+        response = urllib.request.urlopen(url).read()
+        response = response.decode('unicode-escape')
+        response = response.replace("\xa0",",")
         response = re.sub("([a-z]+):", '"\\1" :', response)
         response = response.replace("<sup>","^(")
         response = response.replace("</sup>",")")
@@ -22,11 +23,12 @@ def google_convert(self, e):
             google_convert.lastresult[nick] = str(response['rhs'])
             e.output = result
     except Exception as inst: 
-        print "!c " + term + " : " + str(inst)
+        traceback.print_exc()
+        print("!c " + term + " : " + str(inst))
         e = None
     
     return e
-google_convert.command = "!c"
-google_convert.lastresult = {}
-google_convert.helptext = "Usage: !c <calculator or conversion query>\nExample: !c 42 fathoms per second to mph\nSends a query to Google Calculator and returns the result.\nCan also be used for currency exchange conversions: !c 1USD to CAD"
+#google_convert.command = "!c"
+#google_convert.lastresult = {}
+#google_convert.helptext = "Usage: !c <calculator or conversion query>\nExample: !c 42 fathoms per second to mph\nSends a query to Google Calculator and returns the result.\nCan also be used for currency exchange conversions: !c 1USD to CAD"
 

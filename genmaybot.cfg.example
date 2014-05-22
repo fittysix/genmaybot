@@ -1,14 +1,26 @@
 [irc]
+nick=Pybot
 identpassword=Password
+opernick=Nick
+operpassword=Password
+server=irc.server.net:6667
+channels=#channel1,#channel2
 botadmins=nick1,nick2,etc
 
-[mysql]
-sqlusername=Pythonbot
-sqlpassword=Password
-#mysqlmode 0 = Off, 1=Read Only, 2 = Read/write
-mysqlmode=0
-
-
 [APIkeys]
-wolframAPIkey=#A#A#
-fmlAPIkey=#A#A#
+wolframAPIkey=kA1A1
+fmlAPIkey=cA1A1
+rtAPIkey=fA1a1
+wwoAPIkey=asdfghjkl
+nprAPIkey=asdfghjhkl
+
+[webui]
+username=admin
+password=change-me-or-someone-will-steal-your-config
+port=8080
+
+[misc]
+#log files for saving stdout and stderr
+error_log=error_log
+event_log=event_log
+

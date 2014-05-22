@@ -1,8 +1,8 @@
-import json, urllib2, random
+import json, urllib.request, urllib.error, urllib.parse, random
 def get_cat(self, e):
     url = "http://www.reddit.com/r/catpictures+cats/.json"
     e.output = get_redditpics(url)
-    return e     
+    return e
 get_cat.command = "!cats"
 
 def get_dvq(self, e):
@@ -13,7 +13,7 @@ get_dvq.command = "!dvq"
 def get_rat(self, e):
     url = "http://www.reddit.com/r/rats/.json"
     e.output = get_redditpics(url)
-    return e     
+    return e
 get_rat.command = "!rats"
 
 def get_dog(self, e):
@@ -46,15 +46,28 @@ def get_sandwich(self, e):
     return e
 get_sandwich.command = "!sandwiches"
 
+def get_rpics(self, e):
+    if not e.input:
+        e.input = "pics"
+    elif "clop" in e.input:
+        self.irccontext.kick(e.source, e.nick, "No clop allowed!")
+        return e
+    url = "http://www.reddit.com/r/%s/.json" % e.input
+    e.output = get_redditpics(url)
+    return e
+get_rpics.command = "!rpics"
+
 def get_redditpics(url):
-    opener = urllib2.build_opener()
+    opener = urllib.request.build_opener()
     opener.addheaders = [('User-agent', 'genmaybot IRC bot')]
     response = opener.open(url).read()
-    cats = json.loads(response)
+    cats = json.loads(response.decode('utf-8'))
     catlist = []
     for cat in cats['data']['children']:
         if 'jpg' in cat['data']['url'] or 'imgur.com' in cat['data']['url']:
-            catlist.append(cat['data']['url'] + " - " + cat['data']['title'])
+            pic_title = cat['data']['title']
+            pic_title = pic_title.replace('\n', '')
+            catlist.append(cat['data']['url'] + " - " + pic_title)
 
     cats = catlist.pop(random.randint(0, len(catlist) - 1)) + " :: " + catlist.pop(random.randint(0, len(catlist) - 1))
     return cats

@@ -3,8 +3,8 @@ import threading, operator
 def poll(self, event):
     poll.onnow = False
     winners = []
-    maxkey = max(poll.votes.iteritems(), key=operator.itemgetter(1))[0]
-    for key,value in poll.votes.items():
+    maxkey = max(iter(poll.votes.items()), key=operator.itemgetter(1))[0]
+    for key,value in list(poll.votes.items()):
         if value == poll.votes[maxkey]:
             winners.append(key)
     s = "s"

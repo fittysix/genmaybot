@@ -1,0 +1,71 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{13722863-622a-4069-9075-f44d20f9cfd1}</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>genmaybot.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>pythongenmaybot</Name>
+    <RootNamespace>pythongenmaybot</RootNamespace>
+    <IsWindowsApplication>False</IsWindowsApplication>
+    <InterpreterId>9a7a9026-48c1-4688-9d5d-e5699d47d074</InterpreterId>
+    <InterpreterVersion>3.2</InterpreterVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="botmodules\admin_redownload.py" />
+    <Compile Include="botmodules\bbc.py" />
+    <Compile Include="botmodules\beer.py" />
+    <Compile Include="botmodules\botadmin.py" />
+    <Compile Include="botmodules\calc.py" />
+    <Compile Include="botmodules\cats.py" />
+    <Compile Include="botmodules\chatterbotapi.py" />
+    <Compile Include="botmodules\earthquake.py" />
+    <Compile Include="botmodules\error_generator.py" />
+    <Compile Include="botmodules\fml.py" />
+    <Compile Include="botmodules\gwiki.py" />
+    <Compile Include="botmodules\help.py" />
+    <Compile Include="botmodules\imdb.py" />
+    <Compile Include="botmodules\kick.py" />
+    <Compile Include="botmodules\metacritic.py" />
+    <Compile Include="botmodules\news.py" />
+    <Compile Include="botmodules\poll.py" />
+    <Compile Include="botmodules\portfolio.py" />
+    <Compile Include="botmodules\pysix.py" />
+    <Compile Include="botmodules\rt.py" />
+    <Compile Include="botmodules\stock.py" />
+    <Compile Include="botmodules\sun.py" />
+    <Compile Include="botmodules\tools.py" />
+    <Compile Include="botmodules\unalaska_blotter.py" />
+    <Compile Include="botmodules\urban_dictionary.py" />
+    <Compile Include="botmodules\url.py" />
+    <Compile Include="botmodules\userlocation.py" />
+    <Compile Include="botmodules\weather.py" />
+    <Compile Include="botmodules\weather_alerts.py" />
+    <Compile Include="botmodules\wiki.py" />
+    <Compile Include="botmodules\wolfram.py" />
+    <Compile Include="botmodules\woot.py" />
+    <Compile Include="botmodules\__init__.py" />
+    <Compile Include="genmaybot.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="botmodules\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="genmaybot.cfg" />
+    <Content Include="README" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" />
+</Project>
